@@ -11,6 +11,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from datetime import datetime
 from rango.bing_search import run_query
+from django.shortcuts import redirect
+from django.contrib.auth.models import User
+
 
 
 def index(request):
@@ -87,15 +90,29 @@ def about(request):
 
 def category(request, category_name_slug):
     context_dict = {}
+    context_dict['result_list'] = None
+    context_dict['query'] = None
+    if request.method == 'POST':
+        query = request.POST['query'].strip()
+
+        if query:
+            result_list = run_query(query)
+
+            context_dict['result_list'] = result_list
+            context_dict['query'] = query
+
     try:
-        context_dict['category_name_slug'] = category_name_slug
         category = Category.objects.get(slug=category_name_slug)
         context_dict['category_name'] = category.name
-        pages = Page.objects.filter(category=category)
+        pages = Page.objects.filter(category=category).order_by('-views')
         context_dict['pages'] = pages
         context_dict['category'] = category
     except Category.DoesNotExist:
         pass
+
+    if not context_dict['query']:
+        context_dict['query'] = category.name
+
     return render(request, 'rango/category.html', context_dict)
 
 
@@ -205,3 +222,56 @@ def search(request):
 
     return render(request, 'rango/search.html', {'result_list': result_list})
 
+
+def track_url(request):
+    page_id = None 
+    url = '/rango/' 
+    if request.method == 'GET': 
+        if 'page_id' in request.GET:
+            page_id = request.GET['page_id']
+            try: 
+                page = Page.objects.get(id=page_id) 
+                page.views = page.views + 1 
+                page.save() 
+                url = page.url 
+            except: 
+                pass 
+    return redirect(url)
+
+@login_required
+def register_profile(request):
+    	context_dict = {}
+	
+	if not request.method == 'POST':
+		context_dict['profile_form'] = UserProfileForm(request.GET)
+		return render(request, 'registration/profile_registration.html', context_dict)
+		
+	profile_form = UserProfileForm(request.POST)
+	user = User.objects.get(id=request.user.id)
+	
+	if profile_form.is_valid():
+		try: # Does a profile exist?
+			profile = UserProfile.objects.get(user=user)
+		except: # No?
+			profile = profile_form.save(commit=False)
+			profile.user = user
+		if 'website' in request.POST and request.POST['website']:
+			profile.website = request.POST['website']
+		if 'picture' in request.FILES and request.FILES.get('picture'):
+			profile.picture = request.FILES.get('picture')
+		profile.save()
+		
+	return render(request, 'rango/index.html', context_dict)
+
+@login_required
+def profile(request):
+    context_dict = {}
+
+    try:
+        up = UserProfile.objects.get
+    except:
+        up = None
+
+    context_dict['userprofile'] = up
+
+    return render(request, 'rango/profile.html', context_dict)
